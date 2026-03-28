@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { DropSpot, Coordinates, FilterStatus } from '@/lib/types'
+import { DropSpot, Coordinates, FilterStatus, MapBounds } from '@/lib/types'
 import { STORAGE_KEYS } from '@/lib/constants'
 import { useLocation } from '@/hooks/useLocation'
 import { useDropSpots } from '@/hooks/useDropSpots'
@@ -43,8 +43,8 @@ export default function Home() {
     isSecureContext,
   } = useLocation()
 
-  // Spots data
-  const { spots, loading: spotsLoading, refetch: refetchSpots } = useDropSpots(coords)
+  // Spots data - no longer depends on coords, fetches all/by bounds
+  const { spots, loading: spotsLoading, refetch: refetchSpots, updateBounds } = useDropSpots()
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -90,6 +90,10 @@ export default function Home() {
   const handleMapCenterChange = useCallback((center: Coordinates) => {
     setMapCenter(center)
   }, [])
+
+  const handleBoundsChange = useCallback((bounds: MapBounds) => {
+    updateBounds(bounds)
+  }, [updateBounds])
 
   const handleUseMyLocation = useCallback(() => {
     if (coords) {
@@ -228,8 +232,10 @@ export default function Home() {
         filter={filter}
         isAddMode={isAddMode}
         onMapCenterChange={handleMapCenterChange}
+        onBoundsChange={handleBoundsChange}
         onSpotSelect={handleSpotSelect}
         hasExtraBanner={usingDefault}
+        isLoading={spotsLoading}
       />
 
       {/* Add spot flow */}

@@ -45,6 +45,11 @@ export interface Coordinates {
   lng: number
 }
 
+export interface MapBounds {
+  northEast: Coordinates
+  southWest: Coordinates
+}
+
 export interface LocationState {
   coords: Coordinates | null
   loading: boolean

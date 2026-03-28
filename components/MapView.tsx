@@ -1,15 +1,14 @@
 'use client'
 
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap, Circle } from 'react-leaflet'
 import L from 'leaflet'
-import { DropSpot, Coordinates, FilterStatus } from '@/lib/types'
-import { OSM_TILE_URL, OSM_ATTRIBUTION, DEFAULT_ZOOM, DEFAULT_CENTER } from '@/lib/constants'
+import { DropSpot, Coordinates, FilterStatus, MapBounds } from '@/lib/types'
+import { OSM_TILE_URL, OSM_ATTRIBUTION, DEFAULT_CENTER } from '@/lib/constants'
 import SpotMarker from './SpotMarker'
 
 // Fix Leaflet default icon issue with Next.js
-// This runs only on client side
 if (typeof window !== 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const L = require('leaflet')
@@ -34,73 +33,103 @@ const userLocationIcon = L.divIcon({
   iconAnchor: [12, 12],
 })
 
-// Temporary pin icon (for adding new spots)
-const tempPinIcon = L.divIcon({
-  html: `
-    <svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18 0C8.06 0 0 8.06 0 18c0 12.627 16.227 24.718 17.107 25.44a1.5 1.5 0 001.786 0C19.773 42.718 36 30.627 36 18c0-9.94-8.06-18-18-18z" fill="#6366f1"/>
-      <circle cx="18" cy="18" r="8" fill="white"/>
-      <path d="M14 18h8M18 14v8" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-  `,
-  className: 'temp-pin-marker',
-  iconSize: [36, 44],
-  iconAnchor: [18, 44],
-})
-
 interface MapViewProps {
   userCoords: Coordinates | null
   spots: DropSpot[]
   filter: FilterStatus
   isAddMode: boolean
   onMapCenterChange: (coords: Coordinates) => void
+  onBoundsChange: (bounds: MapBounds) => void
   onSpotSelect: (spot: DropSpot) => void
   hasExtraBanner?: boolean
+  isLoading?: boolean
 }
 
-// Component to handle map centering
-function MapController({ center }: { center: Coordinates }) {
+// Component to fly to a location
+function FlyToLocation({ coords, trigger }: { coords: Coordinates; trigger: number }) {
   const map = useMap()
 
   useEffect(() => {
-    map.setView([center.lat, center.lng], DEFAULT_ZOOM)
-  }, [map, center.lat, center.lng])
+    if (trigger > 0) {
+      map.flyTo([coords.lat, coords.lng], 14, { duration: 0.8 })
+    }
+  }, [map, coords.lat, coords.lng, trigger])
 
   return null
 }
 
-// Component to track map center when dragging (for add mode)
-function MapCenterTracker({
+// Component to center map on user location (only once on initial load)
+function InitialCenterController({ center, hasInitialized }: { center: Coordinates; hasInitialized: React.MutableRefObject<boolean> }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      map.setView([center.lat, center.lng], 14) // Zoom level 14 - neighborhood view
+      hasInitialized.current = true
+    }
+  }, [map, center.lat, center.lng, hasInitialized])
+
+  return null
+}
+
+// Component to track all map movements and report bounds
+function MapEventHandler({
   isAddMode,
   onCenterChange,
+  onBoundsChange,
 }: {
   isAddMode: boolean
   onCenterChange: (coords: Coordinates) => void
+  onBoundsChange: (bounds: MapBounds) => void
 }) {
   const map = useMap()
 
-  useMapEvents({
-    moveend() {
-      if (isAddMode) {
-        const center = map.getCenter()
-        onCenterChange({ lat: center.lat, lng: center.lng })
-      }
-    },
-    move() {
-      if (isAddMode) {
-        const center = map.getCenter()
-        onCenterChange({ lat: center.lat, lng: center.lng })
-      }
-    },
-  })
+  const reportBounds = useCallback(() => {
+    const bounds = map.getBounds()
+    onBoundsChange({
+      northEast: { lat: bounds.getNorthEast().lat, lng: bounds.getNorthEast().lng },
+      southWest: { lat: bounds.getSouthWest().lat, lng: bounds.getSouthWest().lng },
+    })
+  }, [map, onBoundsChange])
 
-  // Send initial center when entering add mode
-  useEffect(() => {
+  const reportCenter = useCallback(() => {
     if (isAddMode) {
       const center = map.getCenter()
       onCenterChange({ lat: center.lat, lng: center.lng })
     }
-  }, [isAddMode, map, onCenterChange])
+  }, [map, isAddMode, onCenterChange])
+
+  useMapEvents({
+    moveend() {
+      reportBounds()
+      reportCenter()
+    },
+    zoomend() {
+      reportBounds()
+    },
+    move() {
+      // Only report center during add mode for real-time crosshair position
+      if (isAddMode) {
+        reportCenter()
+      }
+    },
+  })
+
+  // Report initial bounds when map loads
+  useEffect(() => {
+    // Small delay to ensure map is fully rendered
+    const timeout = setTimeout(() => {
+      reportBounds()
+    }, 100)
+    return () => clearTimeout(timeout)
+  }, [reportBounds])
+
+  // Report center when entering add mode
+  useEffect(() => {
+    if (isAddMode) {
+      reportCenter()
+    }
+  }, [isAddMode, reportCenter])
 
   return null
 }
@@ -111,10 +140,20 @@ export default function MapView({
   filter,
   isAddMode,
   onMapCenterChange,
+  onBoundsChange,
   onSpotSelect,
   hasExtraBanner = false,
+  isLoading = false,
 }: MapViewProps) {
   const [mapReady, setMapReady] = useState(false)
+  const [flyToTrigger, setFlyToTrigger] = useState(0)
+  const hasInitializedRef = useRef(false)
+
+  const handleLocateMe = useCallback(() => {
+    if (userCoords) {
+      setFlyToTrigger((prev) => prev + 1)
+    }
+  }, [userCoords])
 
   // Filter spots based on selected filter
   const filteredSpots = spots.filter((spot) => {
@@ -135,36 +174,47 @@ export default function MapView({
     <div className={`fixed inset-0 ${topPadding}`}>
       <MapContainer
         center={[center.lat, center.lng]}
-        zoom={DEFAULT_ZOOM}
+        zoom={13}
+        minZoom={10}  // Prevent zooming out beyond city level
+        maxZoom={18}  // Max detail level
         className="w-full h-full"
-        zoomControl={false}
+        zoomControl={true}
         preferCanvas={true}
         whenReady={handleMapReady}
       >
         <TileLayer url={OSM_TILE_URL} attribution={OSM_ATTRIBUTION} />
 
-        {mapReady && userCoords && !isAddMode && <MapController center={userCoords} />}
+        {/* Center on user location once */}
+        {mapReady && userCoords && !isAddMode && (
+          <InitialCenterController center={userCoords} hasInitialized={hasInitializedRef} />
+        )}
 
-        <MapCenterTracker isAddMode={isAddMode} onCenterChange={onMapCenterChange} />
+        {/* Track all map movements */}
+        <MapEventHandler
+          isAddMode={isAddMode}
+          onCenterChange={onMapCenterChange}
+          onBoundsChange={onBoundsChange}
+        />
 
         {/* User location marker */}
         {userCoords && (
           <>
             <Circle
               center={[userCoords.lat, userCoords.lng]}
-              radius={50}
+              radius={100}
               pathOptions={{
                 fillColor: '#3b82f6',
-                fillOpacity: 0.1,
+                fillOpacity: 0.15,
                 color: '#3b82f6',
-                weight: 1,
+                weight: 2,
               }}
             />
             <Marker position={[userCoords.lat, userCoords.lng]} icon={userLocationIcon} />
+            <FlyToLocation coords={userCoords} trigger={flyToTrigger} />
           </>
         )}
 
-        {/* Spot markers - hide in add mode for cleaner view */}
+        {/* Spot markers - always show, filtered by status */}
         {!isAddMode && filteredSpots.map((spot) => (
           <SpotMarker key={spot.id} spot={spot} onSelect={onSpotSelect} />
         ))}
@@ -176,9 +226,8 @@ export default function MapView({
           className="absolute inset-0 pointer-events-none flex items-center justify-center"
           style={{ zIndex: 1000 }}
         >
-          {/* Crosshair pin - larger and more visible */}
           <div className="relative" style={{ marginBottom: '60px' }}>
-            {/* Shadow for better visibility */}
+            {/* Shadow */}
             <div className="absolute inset-0 blur-sm opacity-50">
               <svg width="56" height="68" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M18 0C8.06 0 0 8.06 0 18c0 12.627 16.227 24.718 17.107 25.44a1.5 1.5 0 001.786 0C19.773 42.718 36 30.627 36 18c0-9.94-8.06-18-18-18z" fill="#000"/>
@@ -197,13 +246,45 @@ export default function MapView({
                 </linearGradient>
               </defs>
             </svg>
-            {/* Pulsing ring at bottom */}
+            {/* Pulsing ring */}
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
               <div className="w-6 h-6 bg-purple-500/40 rounded-full animate-ping" />
               <div className="absolute inset-0 w-6 h-6 bg-purple-500/60 rounded-full" />
             </div>
           </div>
         </div>
+      )}
+
+      {/* Spot count indicator */}
+      {!isAddMode && (
+        <div className="absolute bottom-4 left-4 bg-surface/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-border z-[500]">
+          <span className="text-sm text-white">
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                Loading...
+              </span>
+            ) : (
+              <>
+                <span className="text-primary font-bold">{filteredSpots.length}</span> spots visible
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Locate Me button */}
+      {!isAddMode && userCoords && (
+        <button
+          onClick={handleLocateMe}
+          className="absolute bottom-4 right-4 w-12 h-12 bg-surface/90 backdrop-blur-sm rounded-full border border-border z-[500] flex items-center justify-center shadow-lg hover:bg-surface transition-colors"
+          aria-label="Go to my location"
+        >
+          <svg className="w-6 h-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       )}
     </div>
   )

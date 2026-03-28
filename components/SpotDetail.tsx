@@ -52,11 +52,43 @@ export default function SpotDetail({ spot, userId, onClose, onUpdate }: SpotDeta
 
   const { label, bgColor, description: statusDescription } = STATUS_CONFIG[spot.status]
 
-  // Generate Google Maps directions URL
-  const getDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.latitude},${spot.longitude}`
+  // Detect iOS for Apple Maps
+  const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent)
 
+  // Generate directions URL - Use coordinates with encoded name
   const openDirections = () => {
-    window.open(getDirectionsUrl, '_blank')
+    const lat = spot.latitude
+    const lng = spot.longitude
+    const encodedName = encodeURIComponent(spot.name)
+
+    let url: string
+    if (isIOS) {
+      // Apple Maps - supports custom label with 'q' parameter
+      url = `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d&t=m`
+    } else {
+      // Google Maps - pass exact coordinates for navigation
+      // Using 'dir' endpoint with destination coordinates
+      url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=&travelmode=driving`
+    }
+
+    window.open(url, '_blank')
+  }
+
+  // Open spot location in maps (not directions, just view the spot)
+  const openInMaps = () => {
+    const lat = spot.latitude
+    const lng = spot.longitude
+    const encodedName = encodeURIComponent(spot.name)
+
+    let url: string
+    if (isIOS) {
+      url = `https://maps.apple.com/?q=${encodedName}&ll=${lat},${lng}&z=17`
+    } else {
+      // Google Maps search with coordinates - shows pin at exact location
+      url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+    }
+
+    window.open(url, '_blank')
   }
 
   return (
@@ -95,17 +127,37 @@ export default function SpotDetail({ spot, userId, onClose, onUpdate }: SpotDeta
           {/* Description */}
           {spot.description && <p className="text-muted mb-4">{spot.description}</p>}
 
-          {/* GET DIRECTIONS - Primary Action */}
-          <button
-            onClick={openDirections}
-            className="w-full bg-blue-600 text-white py-4 rounded-lg font-medium mb-3 hover:bg-blue-700 transition-colors flex items-center justify-center gap-3 text-lg"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Get Directions
-          </button>
+          {/* Coordinates display */}
+          <div className="bg-border/50 rounded-lg px-3 py-2 mb-3">
+            <p className="text-xs text-muted">
+              📍 {spot.latitude.toFixed(6)}, {spot.longitude.toFixed(6)}
+            </p>
+          </div>
+
+          {/* Navigation buttons */}
+          <div className="flex gap-2 mb-3">
+            {/* GET DIRECTIONS - Primary Action */}
+            <button
+              onClick={openDirections}
+              className="flex-1 bg-blue-600 text-white py-4 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              Navigate
+            </button>
+
+            {/* View in Maps */}
+            <button
+              onClick={openInMaps}
+              className="bg-surface border border-border text-white py-4 px-4 rounded-lg font-medium hover:bg-border transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Open
+            </button>
+          </div>
 
           {/* Verify/Upvote button */}
           <button

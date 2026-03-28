@@ -2,25 +2,27 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { DropSpot, Coordinates } from '@/lib/types'
-import { DEFAULT_RADIUS_M, LOCATION_CHANGE_THRESHOLD_M, STORAGE_KEYS } from '@/lib/constants'
-import { haversineDistance } from '@/lib/geo'
+import { DropSpot, MapBounds } from '@/lib/types'
+import { STORAGE_KEYS } from '@/lib/constants'
 
-export function useDropSpots(userCoords: Coordinates | null) {
+export function useDropSpots() {
   const [spots, setSpots] = useState<DropSpot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const lastFetchCoords = useRef<Coordinates | null>(null)
+  const lastBounds = useRef<MapBounds | null>(null)
+  const fetchTimeout = useRef<NodeJS.Timeout | null>(null)
 
-  const fetchSpots = useCallback(async (coords: Coordinates) => {
+  // Fetch spots within map bounds
+  const fetchSpotsByBounds = useCallback(async (bounds: MapBounds) => {
     try {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await supabase.rpc('get_nearby_spots', {
-        user_lat: coords.lat,
-        user_lng: coords.lng,
-        radius_m: DEFAULT_RADIUS_M,
+      const { data, error: fetchError } = await supabase.rpc('get_spots_in_bounds', {
+        min_lat: bounds.southWest.lat,
+        max_lat: bounds.northEast.lat,
+        min_lng: bounds.southWest.lng,
+        max_lng: bounds.northEast.lng,
       })
 
       if (fetchError) {
@@ -29,7 +31,7 @@ export function useDropSpots(userCoords: Coordinates | null) {
 
       const fetchedSpots = (data as DropSpot[]) || []
       setSpots(fetchedSpots)
-      lastFetchCoords.current = coords
+      lastBounds.current = bounds
 
       // Cache spots for offline fallback
       try {
@@ -38,16 +40,34 @@ export function useDropSpots(userCoords: Coordinates | null) {
         // Ignore storage errors
       }
     } catch (err: unknown) {
-      const errorObj = err as { message?: string; code?: string; hint?: string }
-      console.error('Error fetching spots:', JSON.stringify(err, null, 2))
+      const errorObj = err as { message?: string; code?: string }
+      console.error('Error fetching spots:', err)
 
-      // Check for common errors
+      // Check for function not existing error
       if (errorObj?.code === 'PGRST202' || errorObj?.message?.includes('function')) {
-        setError('Database not set up. Run schema.sql in Supabase SQL Editor.')
-      } else if (errorObj?.message?.includes('placeholder')) {
-        setError('Supabase credentials not configured. Check .env.local')
+        // Fallback: try to get all spots
+        try {
+          const { data: allData } = await supabase.rpc('get_all_spots')
+          if (allData) {
+            setSpots(allData as DropSpot[])
+            return
+          }
+        } catch {
+          // If that also fails, try direct query
+          const { data: directData } = await supabase
+            .from('drop_spots')
+            .select('*')
+            .order('upvotes', { ascending: false })
+            .limit(500)
+
+          if (directData) {
+            setSpots(directData as DropSpot[])
+            return
+          }
+        }
+        setError('Run map_bounds_function.sql in Supabase SQL Editor')
       } else {
-        setError(errorObj?.message || 'Failed to load nearby spots')
+        setError(errorObj?.message || 'Failed to load spots')
       }
 
       // Try to load cached spots
@@ -64,18 +84,74 @@ export function useDropSpots(userCoords: Coordinates | null) {
     }
   }, [])
 
-  // Initial fetch and refetch when location changes significantly
-  useEffect(() => {
-    if (!userCoords) return
+  // Fetch all spots (initial load)
+  const fetchAllSpots = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-    const shouldRefetch =
-      !lastFetchCoords.current ||
-      haversineDistance(lastFetchCoords.current, userCoords) > LOCATION_CHANGE_THRESHOLD_M
+      // Try RPC function first
+      let data: DropSpot[] | null = null
 
-    if (shouldRefetch) {
-      fetchSpots(userCoords)
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_spots')
+
+      if (!rpcError && rpcData) {
+        data = rpcData as DropSpot[]
+      } else {
+        // Fallback to direct query
+        const { data: directData, error: directError } = await supabase
+          .from('drop_spots')
+          .select('*')
+          .neq('status', 'cleared')
+          .order('upvotes', { ascending: false })
+          .limit(500)
+
+        if (!directError && directData) {
+          data = directData as DropSpot[]
+        }
+      }
+
+      if (data) {
+        setSpots(data)
+        try {
+          localStorage.setItem(STORAGE_KEYS.CACHED_SPOTS, JSON.stringify(data))
+        } catch {
+          // Ignore
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching all spots:', err)
+      setError('Failed to load spots')
+
+      // Try cached
+      try {
+        const cached = localStorage.getItem(STORAGE_KEYS.CACHED_SPOTS)
+        if (cached) {
+          setSpots(JSON.parse(cached))
+        }
+      } catch {
+        // Ignore
+      }
+    } finally {
+      setLoading(false)
     }
-  }, [userCoords, fetchSpots])
+  }, [])
+
+  // Debounced bounds update (don't fetch on every tiny move)
+  const updateBounds = useCallback((bounds: MapBounds) => {
+    if (fetchTimeout.current) {
+      clearTimeout(fetchTimeout.current)
+    }
+
+    fetchTimeout.current = setTimeout(() => {
+      fetchSpotsByBounds(bounds)
+    }, 300) // Wait 300ms after user stops moving
+  }, [fetchSpotsByBounds])
+
+  // Initial fetch - get all spots
+  useEffect(() => {
+    fetchAllSpots()
+  }, [fetchAllSpots])
 
   // Set up realtime subscription
   useEffect(() => {
@@ -92,9 +168,8 @@ export function useDropSpots(userCoords: Coordinates | null) {
           if (payload.eventType === 'INSERT') {
             const newSpot = payload.new as DropSpot
             setSpots((prev) => {
-              // Avoid duplicates
               if (prev.some((s) => s.id === newSpot.id)) return prev
-              return [...prev, newSpot]
+              return [newSpot, ...prev]
             })
           } else if (payload.eventType === 'UPDATE') {
             const updatedSpot = payload.new as DropSpot
@@ -114,11 +189,20 @@ export function useDropSpots(userCoords: Coordinates | null) {
     }
   }, [])
 
-  const refetch = useCallback(() => {
-    if (userCoords) {
-      fetchSpots(userCoords)
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeout.current) {
+        clearTimeout(fetchTimeout.current)
+      }
     }
-  }, [userCoords, fetchSpots])
+  }, [])
 
-  return { spots, loading, error, refetch }
+  return {
+    spots,
+    loading,
+    error,
+    refetch: fetchAllSpots,
+    updateBounds
+  }
 }

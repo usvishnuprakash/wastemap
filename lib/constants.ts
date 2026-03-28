@@ -1,9 +1,7 @@
 import { SpotStatus, FilterStatus } from './types'
 
 // Map configuration
-export const DEFAULT_ZOOM = 16
-export const DEFAULT_RADIUS_M = 1000 // 1km radius for fetching spots
-export const LOCATION_CHANGE_THRESHOLD_M = 50 // Refetch when user moves 50m
+export const DEFAULT_ZOOM = 12 // City-level zoom to see more spots initially
 
 // Status configuration - internal values stay same, display labels are user-friendly
 export const STATUS_CONFIG: Record<SpotStatus, { label: string; color: string; bgColor: string; icon: string; description: string }> = {
