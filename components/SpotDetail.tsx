@@ -50,7 +50,14 @@ export default function SpotDetail({ spot, userId, onClose, onUpdate }: SpotDeta
     }
   }
 
-  const { label, bgColor } = STATUS_CONFIG[spot.status]
+  const { label, bgColor, description: statusDescription } = STATUS_CONFIG[spot.status]
+
+  // Generate Google Maps directions URL
+  const getDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.latitude},${spot.longitude}`
+
+  const openDirections = () => {
+    window.open(getDirectionsUrl, '_blank')
+  }
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-end justify-center">
@@ -64,12 +71,13 @@ export default function SpotDetail({ spot, userId, onClose, onUpdate }: SpotDeta
           <div className="flex items-start justify-between">
             <div className="flex-1 pr-4">
               <h2 className="text-xl font-bold text-white mb-1">{spot.name}</h2>
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm flex-wrap">
                 <span className={`${bgColor} text-white px-2 py-0.5 rounded-full text-xs`}>{label}</span>
-                {spot.distance_m !== undefined && (
-                  <span className="text-muted">{formatDistance(spot.distance_m)} away</span>
-                )}
+                <span className="text-muted text-xs">{statusDescription}</span>
               </div>
+              {spot.distance_m !== undefined && (
+                <p className="text-muted text-sm mt-1">{formatDistance(spot.distance_m)} away from you</p>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -87,16 +95,28 @@ export default function SpotDetail({ spot, userId, onClose, onUpdate }: SpotDeta
           {/* Description */}
           {spot.description && <p className="text-muted mb-4">{spot.description}</p>}
 
-          {/* Upvote button */}
+          {/* GET DIRECTIONS - Primary Action */}
+          <button
+            onClick={openDirections}
+            className="w-full bg-blue-600 text-white py-4 rounded-lg font-medium mb-3 hover:bg-blue-700 transition-colors flex items-center justify-center gap-3 text-lg"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Get Directions
+          </button>
+
+          {/* Verify/Upvote button */}
           <button
             onClick={handleUpvote}
             disabled={loading}
-            className="w-full bg-primary text-white py-3 rounded-lg font-medium mb-4 hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full bg-surface border border-primary text-primary py-3 rounded-lg font-medium mb-4 hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            Confirm Location ({spot.upvotes})
+            Verify Location ({spot.upvotes} verified)
           </button>
 
           {/* Status update */}

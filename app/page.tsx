@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { DropSpot, Coordinates, FilterStatus } from '@/lib/types'
+import { STORAGE_KEYS } from '@/lib/constants'
 import { useLocation } from '@/hooks/useLocation'
 import { useDropSpots } from '@/hooks/useDropSpots'
 import { useAuth } from '@/hooks/useAuth'
@@ -10,8 +11,9 @@ import Header from '@/components/Header'
 import FilterBar from '@/components/FilterBar'
 import AddSpotFlow from '@/components/AddSpotFlow'
 import SpotDetail from '@/components/SpotDetail'
-import LocationError from '@/components/LocationError'
 import Toast from '@/components/Toast'
+import Onboarding from '@/components/Onboarding'
+import AboutModal from '@/components/AboutModal'
 
 // Dynamic import for MapView to avoid SSR issues with Leaflet
 const MapView = dynamic(() => import('@/components/MapView'), {
@@ -44,12 +46,31 @@ export default function Home() {
   // Spots data
   const { spots, loading: spotsLoading, refetch: refetchSpots } = useDropSpots(coords)
 
+  // Onboarding state
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingChecked, setOnboardingChecked] = useState(false)
+
+  // Check if onboarding is needed on mount
+  useEffect(() => {
+    const completed = localStorage.getItem(STORAGE_KEYS.ONBOARDING_COMPLETE)
+    if (!completed) {
+      setShowOnboarding(true)
+    }
+    setOnboardingChecked(true)
+  }, [])
+
+  const handleOnboardingComplete = useCallback(() => {
+    localStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true')
+    setShowOnboarding(false)
+  }, [])
+
   // UI state
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [isAddMode, setIsAddMode] = useState(false)
   const [pinLocation, setPinLocation] = useState<Coordinates | null>(null)
   const [selectedSpot, setSelectedSpot] = useState<DropSpot | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [showAbout, setShowAbout] = useState(false)
 
   // Filter spots for count
   const filteredSpots = spots.filter((spot) => {
@@ -91,6 +112,20 @@ export default function Home() {
     refetchSpots()
     setToast({ message: 'Spot updated!', type: 'success' })
   }, [refetchSpots])
+
+  // Show onboarding on first visit
+  if (showOnboarding && onboardingChecked) {
+    return <Onboarding onComplete={handleOnboardingComplete} />
+  }
+
+  // Wait for onboarding check before showing anything
+  if (!onboardingChecked) {
+    return (
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   // Show location error if geolocation failed and not loading
   if (!locationLoading && locationError && !coords) {
@@ -161,7 +196,7 @@ export default function Home() {
   return (
     <main className="h-screen overflow-hidden bg-background">
       {/* Header */}
-      <Header spotCount={filteredSpots.length} />
+      <Header spotCount={filteredSpots.length} onAboutClick={() => setShowAbout(true)} />
 
       {/* Default location banner */}
       {usingDefault && (
@@ -229,6 +264,9 @@ export default function Home() {
       {toast && (
         <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
       )}
+
+      {/* About modal */}
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
     </main>
   )
 }

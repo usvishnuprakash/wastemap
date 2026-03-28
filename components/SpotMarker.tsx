@@ -33,31 +33,45 @@ function createMarkerIcon(status: DropSpot['status'], upvotes: number) {
 
 export default function SpotMarker({ spot, onSelect }: SpotMarkerProps) {
   const icon = createMarkerIcon(spot.status, spot.upvotes)
-  const { label, bgColor } = STATUS_CONFIG[spot.status]
+  const { label, bgColor, description } = STATUS_CONFIG[spot.status]
+
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${spot.latitude},${spot.longitude}`
 
   return (
     <Marker position={[spot.latitude, spot.longitude]} icon={icon}>
       <Popup>
-        <div className="min-w-[200px] -m-2">
-          <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-[220px] -m-2">
+          <div className="flex items-start justify-between gap-2 mb-1">
             <h3 className="font-bold text-gray-900 leading-tight">{spot.name}</h3>
             <span className={`${bgColor} text-white text-xs px-2 py-0.5 rounded-full whitespace-nowrap`}>
               {label}
             </span>
           </div>
 
+          <p className="text-xs text-gray-500 mb-2">{description}</p>
+
           {spot.distance_m !== undefined && (
-            <p className="text-sm text-gray-600 mb-1">{formatDistance(spot.distance_m)} away</p>
+            <p className="text-sm text-gray-700 font-medium mb-1">{formatDistance(spot.distance_m)} away</p>
           )}
 
-          <p className="text-xs text-gray-500 mb-3">Updated {formatRelativeTime(spot.updated_at)}</p>
+          <p className="text-xs text-gray-400 mb-3">Updated {formatRelativeTime(spot.updated_at)}</p>
 
-          <button
-            onClick={() => onSelect(spot)}
-            className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors"
-          >
-            View Details
-          </button>
+          <div className="flex gap-2">
+            <a
+              href={directionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors text-center"
+            >
+              Directions
+            </a>
+            <button
+              onClick={() => onSelect(spot)}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg text-sm font-medium hover:bg-gray-300 transition-colors"
+            >
+              Details
+            </button>
+          </div>
         </div>
       </Popup>
     </Marker>
