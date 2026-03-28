@@ -1,0 +1,19 @@
+{
+  "name": "WasteMap",
+  "short_name": "WasteMap",
+  "description": "Open-source community waste management platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f0d",
+  "theme_color": "#22c55e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "navigation"]
+}
