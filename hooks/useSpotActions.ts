@@ -3,6 +3,13 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SpotStatus, ActivityAction } from '@/lib/types'
+import {
+  validateSpotName,
+  validateCoordinates,
+  validateStatus,
+  checkRateLimit,
+  sanitizeInput,
+} from '@/lib/validation'
 
 interface AddSpotParams {
   name: string
@@ -30,12 +37,37 @@ export function useSpotActions() {
     setError(null)
 
     try {
+      // Rate limiting - max 5 spots per minute
+      if (!checkRateLimit('add_spot', 5)) {
+        throw new Error('Too many requests. Please wait a minute before adding another spot.')
+      }
+
+      // Validate name
+      const nameValidation = validateSpotName(params.name)
+      if (!nameValidation.valid) {
+        throw new Error(nameValidation.error || 'Invalid spot name')
+      }
+
+      // Validate coordinates
+      const coordValidation = validateCoordinates(params.latitude, params.longitude)
+      if (!coordValidation.valid) {
+        throw new Error(coordValidation.error || 'Invalid coordinates')
+      }
+
+      // Validate status
+      if (!validateStatus(params.status)) {
+        throw new Error('Invalid status value')
+      }
+
+      // Sanitize description
+      const sanitizedDescription = params.description ? sanitizeInput(params.description).slice(0, 500) : ''
+
       const { data, error: insertError } = await supabase
         .from('drop_spots')
         .insert({
           user_id: params.userId,
-          name: params.name,
-          description: params.description || '',
+          name: nameValidation.sanitized,
+          description: sanitizedDescription,
           latitude: params.latitude,
           longitude: params.longitude,
           status: params.status,
@@ -63,6 +95,16 @@ export function useSpotActions() {
     setError(null)
 
     try {
+      // Rate limiting - max 10 status updates per minute
+      if (!checkRateLimit('status_update', 10)) {
+        throw new Error('Too many requests. Please wait before updating another spot.')
+      }
+
+      // Validate status
+      if (!validateStatus(status)) {
+        throw new Error('Invalid status value')
+      }
+
       const { error: updateError } = await supabase
         .from('drop_spots')
         .update({ status })
@@ -87,6 +129,11 @@ export function useSpotActions() {
     setError(null)
 
     try {
+      // Rate limiting - max 10 upvotes per minute
+      if (!checkRateLimit('upvote', 10)) {
+        throw new Error('Too many requests. Please wait before verifying another spot.')
+      }
+
       // Increment upvote count
       const { data: spot } = await supabase
         .from('drop_spots')
@@ -106,7 +153,7 @@ export function useSpotActions() {
       // Log upvote activity
       await logActivity(spotId, userId, 'upvoted')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to upvote'
+      const message = err instanceof Error ? err.message : 'Failed to verify'
       setError(message)
       throw err
     } finally {
