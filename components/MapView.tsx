@@ -53,8 +53,7 @@ interface MapViewProps {
   spots: DropSpot[]
   filter: FilterStatus
   isAddMode: boolean
-  pinLocation: Coordinates | null
-  onPinPlace: (coords: Coordinates) => void
+  onMapCenterChange: (coords: Coordinates) => void
   onSpotSelect: (spot: DropSpot) => void
   hasExtraBanner?: boolean
 }
@@ -70,21 +69,38 @@ function MapController({ center }: { center: Coordinates }) {
   return null
 }
 
-// Component to handle map clicks
-function MapClickHandler({
+// Component to track map center when dragging (for add mode)
+function MapCenterTracker({
   isAddMode,
-  onPinPlace,
+  onCenterChange,
 }: {
   isAddMode: boolean
-  onPinPlace: (coords: Coordinates) => void
+  onCenterChange: (coords: Coordinates) => void
 }) {
+  const map = useMap()
+
   useMapEvents({
-    click(e) {
+    moveend() {
       if (isAddMode) {
-        onPinPlace({ lat: e.latlng.lat, lng: e.latlng.lng })
+        const center = map.getCenter()
+        onCenterChange({ lat: center.lat, lng: center.lng })
+      }
+    },
+    move() {
+      if (isAddMode) {
+        const center = map.getCenter()
+        onCenterChange({ lat: center.lat, lng: center.lng })
       }
     },
   })
+
+  // Send initial center when entering add mode
+  useEffect(() => {
+    if (isAddMode) {
+      const center = map.getCenter()
+      onCenterChange({ lat: center.lat, lng: center.lng })
+    }
+  }, [isAddMode, map, onCenterChange])
 
   return null
 }
@@ -94,8 +110,7 @@ export default function MapView({
   spots,
   filter,
   isAddMode,
-  pinLocation,
-  onPinPlace,
+  onMapCenterChange,
   onSpotSelect,
   hasExtraBanner = false,
 }: MapViewProps) {
@@ -128,9 +143,9 @@ export default function MapView({
       >
         <TileLayer url={OSM_TILE_URL} attribution={OSM_ATTRIBUTION} />
 
-        {mapReady && userCoords && <MapController center={userCoords} />}
+        {mapReady && userCoords && !isAddMode && <MapController center={userCoords} />}
 
-        <MapClickHandler isAddMode={isAddMode} onPinPlace={onPinPlace} />
+        <MapCenterTracker isAddMode={isAddMode} onCenterChange={onMapCenterChange} />
 
         {/* User location marker */}
         {userCoords && (
@@ -149,35 +164,44 @@ export default function MapView({
           </>
         )}
 
-        {/* Spot markers */}
-        {filteredSpots.map((spot) => (
+        {/* Spot markers - hide in add mode for cleaner view */}
+        {!isAddMode && filteredSpots.map((spot) => (
           <SpotMarker key={spot.id} spot={spot} onSelect={onSpotSelect} />
         ))}
-
-        {/* Temporary pin when adding */}
-        {isAddMode && pinLocation && (
-          <Marker position={[pinLocation.lat, pinLocation.lng]} icon={tempPinIcon} />
-        )}
       </MapContainer>
 
-      {/* Add mode overlay */}
-      {isAddMode && !pinLocation && (
-        <div className="absolute inset-0 pointer-events-none bg-black/10 flex items-center justify-center">
-          <div className="text-center text-white drop-shadow-lg">
-            <svg
-              className="w-12 h-12 mx-auto mb-2 animate-bounce"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 14l-7 7m0 0l-7-7m7 7V3"
-              />
+      {/* Crosshair overlay for add mode - FIXED in center */}
+      {isAddMode && (
+        <div
+          className="absolute inset-0 pointer-events-none flex items-center justify-center"
+          style={{ zIndex: 1000 }}
+        >
+          {/* Crosshair pin - larger and more visible */}
+          <div className="relative" style={{ marginBottom: '60px' }}>
+            {/* Shadow for better visibility */}
+            <div className="absolute inset-0 blur-sm opacity-50">
+              <svg width="56" height="68" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 0C8.06 0 0 8.06 0 18c0 12.627 16.227 24.718 17.107 25.44a1.5 1.5 0 001.786 0C19.773 42.718 36 30.627 36 18c0-9.94-8.06-18-18-18z" fill="#000"/>
+              </svg>
+            </div>
+            {/* Main pin */}
+            <svg width="56" height="68" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg" className="relative drop-shadow-lg">
+              <path d="M18 0C8.06 0 0 8.06 0 18c0 12.627 16.227 24.718 17.107 25.44a1.5 1.5 0 001.786 0C19.773 42.718 36 30.627 36 18c0-9.94-8.06-18-18-18z" fill="#8b5cf6"/>
+              <path d="M18 0C8.06 0 0 8.06 0 18c0 12.627 16.227 24.718 17.107 25.44a1.5 1.5 0 001.786 0C19.773 42.718 36 30.627 36 18c0-9.94-8.06-18-18-18z" fill="url(#gradient)" />
+              <circle cx="18" cy="18" r="9" fill="white"/>
+              <circle cx="18" cy="18" r="4" fill="#8b5cf6"/>
+              <defs>
+                <linearGradient id="gradient" x1="18" y1="0" x2="18" y2="44" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#a78bfa"/>
+                  <stop offset="1" stopColor="#7c3aed"/>
+                </linearGradient>
+              </defs>
             </svg>
-            <p className="font-medium">Tap to place pin</p>
+            {/* Pulsing ring at bottom */}
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+              <div className="w-6 h-6 bg-purple-500/40 rounded-full animate-ping" />
+              <div className="absolute inset-0 w-6 h-6 bg-purple-500/60 rounded-full" />
+            </div>
           </div>
         </div>
       )}

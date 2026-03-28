@@ -67,7 +67,7 @@ export default function Home() {
   // UI state
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [isAddMode, setIsAddMode] = useState(false)
-  const [pinLocation, setPinLocation] = useState<Coordinates | null>(null)
+  const [mapCenter, setMapCenter] = useState<Coordinates | null>(null)
   const [selectedSpot, setSelectedSpot] = useState<DropSpot | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [showAbout, setShowAbout] = useState(false)
@@ -81,22 +81,25 @@ export default function Home() {
   // Handlers
   const handleEnterAddMode = useCallback(() => {
     setIsAddMode(true)
-    setPinLocation(null)
   }, [])
 
   const handleExitAddMode = useCallback(() => {
     setIsAddMode(false)
-    setPinLocation(null)
   }, [])
 
-  const handlePinPlace = useCallback((coords: Coordinates) => {
-    setPinLocation(coords)
+  const handleMapCenterChange = useCallback((center: Coordinates) => {
+    setMapCenter(center)
   }, [])
+
+  const handleUseMyLocation = useCallback(() => {
+    if (coords) {
+      setMapCenter(coords)
+    }
+  }, [coords])
 
   const handleAddSuccess = useCallback(() => {
     setIsAddMode(false)
-    setPinLocation(null)
-    setToast({ message: 'Drop spot added successfully!', type: 'success' })
+    setToast({ message: 'Waste spot added successfully!', type: 'success' })
     refetchSpots()
   }, [refetchSpots])
 
@@ -224,8 +227,7 @@ export default function Home() {
         spots={spots}
         filter={filter}
         isAddMode={isAddMode}
-        pinLocation={pinLocation}
-        onPinPlace={handlePinPlace}
+        onMapCenterChange={handleMapCenterChange}
         onSpotSelect={handleSpotSelect}
         hasExtraBanner={usingDefault}
       />
@@ -233,10 +235,12 @@ export default function Home() {
       {/* Add spot flow */}
       <AddSpotFlow
         isAddMode={isAddMode}
-        pinLocation={pinLocation}
+        mapCenter={mapCenter}
+        userCoords={coords}
         userId={userId}
         onEnterAddMode={handleEnterAddMode}
         onExitAddMode={handleExitAddMode}
+        onUseMyLocation={handleUseMyLocation}
         onSuccess={handleAddSuccess}
       />
 
